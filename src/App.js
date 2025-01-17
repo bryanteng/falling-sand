@@ -1,14 +1,14 @@
 import React, { useRef, useEffect, useState } from "react"
 
-const DEFAULT_WIDTH = 600
-const DEFAULT_HEIGHT = 500
-const CELL_SIZE = 5
-const INTERVAL = 2 // refresh rate in ms
-
 const App = () => {
+  const DEFAULT_WIDTH = 600
+  const DEFAULT_HEIGHT = 500
+  const CELL_SIZE = 5
+  const INTERVAL = 2 // refresh rate in ms
   const canvasRef = useRef(null)
   const [canvasWidth, setCanvasWidth] = useState(DEFAULT_WIDTH)
   const [canvasHeight, setCanvasHeight] = useState(DEFAULT_HEIGHT)
+  
   // divides canvas into a grid by cell size
   const [cols, setCols] = useState(Math.floor(canvasWidth / CELL_SIZE))
   const [rows, setRows] = useState(Math.floor(canvasHeight / CELL_SIZE))
@@ -22,13 +22,19 @@ const App = () => {
   const [isMouseDown, setIsMouseDown] = useState(false)
   const [mousePosition, setMousePosition] = useState(null)
   const [dropRadius, setDropRadius] = useState(1) // drop 1x1 square of sand, 2x2, 3x3, etc.
+  const [reverseGravity, setReverseGravity] = useState(false); // space mode
 
   useEffect(() => {
     setCols(Math.floor(canvasWidth / CELL_SIZE))
     setRows(Math.floor(canvasHeight / CELL_SIZE))
-    const initGrid = createGrid() // Create grid with updated dimensions
-
-    setGrid(initGrid)
+    setGrid((prevGrid) => {
+      const newGrid = Array.from({ length: rows }, (_, y) =>
+        Array.from({ length: cols }, (_, x) =>
+          y < prevGrid.length && x < prevGrid[0].length ? prevGrid[y][x] : null
+        )
+      )
+      return newGrid
+    })
   }, [canvasWidth, canvasHeight])
 
   // Draw the grid on the canvas
@@ -48,28 +54,42 @@ const App = () => {
     return "#fff" // default white
   }
 
-// update grid to simulate falling sand
-const updateGrid = (grid) => {
-  const newGrid = grid.map((row) => [...row])
-  for (let y = rows -2 ; y >= 0; y--) {
-    for (let x = 0; x < cols; x++) {
-      if (grid[y][x] === "sand") {
-        if (!grid[y + 1]?.[x]) {
-          // move down
-          newGrid[y + 1][x] = "sand"
-          newGrid[y][x] = null
-        } else if (x > 0 && !grid[y + 1]?.[x - 1]) {
-          // move diagonally left
-          newGrid[y + 1][x - 1] = "sand"
-          newGrid[y][x] = null
-        } else if (x < cols - 1 && !grid[y + 1]?.[x + 1]) {
-          // move diagonally right
-          newGrid[y + 1][x + 1] = "sand"
-          newGrid[y][x] = null
+  // update grid to simulate falling sand
+  const updateGrid = (grid) => {
+    const newGrid = grid.map((row) => [...row])
+
+    // space mode :)
+    if (reverseGravity) {
+      for (let y = 1; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          if (grid[y][x] === "sand" && !grid[y - 1][x]) {
+            newGrid[y - 1][x] = "sand"
+            newGrid[y][x] = null
+          }
+        }
+      }
+    } else {
+      // regular gravity
+      for (let y = rows - 2; y >= 0; y--) {
+        for (let x = 0; x < cols; x++) {
+          if (grid[y][x] === "sand") {
+            if (!grid[y + 1]?.[x]) {
+            // move down
+              newGrid[y + 1][x] = "sand"
+              newGrid[y][x] = null
+            } else if (x > 0 && !grid[y + 1]?.[x - 1]) {
+            // move diagonally left
+              newGrid[y + 1][x - 1] = "sand"
+              newGrid[y][x] = null
+            } else if (x < cols - 1 && !grid[y + 1]?.[x + 1]) {
+            // move diagonally right
+              newGrid[y + 1][x + 1] = "sand"
+              newGrid[y][x] = null
+            }
+          }
         }
       }
     }
-  }
   return newGrid
 }
 
@@ -104,6 +124,43 @@ const updateGrid = (grid) => {
     }
   }
 
+  // simulate physics and animation by redrawing the gird
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const ctx = canvas.getContext("2d")
+
+    const interval = setInterval(() => {
+      setGrid((prevGrid) => {
+        const updatedGrid = updateGrid(prevGrid)
+        drawGrid(ctx, updatedGrid)
+        return updatedGrid
+      })
+    }, INTERVAL)
+
+    return () => clearInterval(interval)
+  }, [canvasHeight, canvasWidth, reverseGravity])
+
+  // drop sand continuously while the mouse down
+  useEffect(() => {
+    const interval = setInterval(() => {
+      dropSand()
+    }, INTERVAL)
+
+    return () => clearInterval(interval)
+  }, [isMouseDown, mousePosition])
+
+  // add/remove event listeners 
+  useEffect(() => {
+    const handleMouseUpGlobal = () => {
+      setIsMouseDown(false)
+    }
+    window.addEventListener("mouseup", handleMouseUpGlobal)
+
+    return () => {
+      window.removeEventListener("mouseup", handleMouseUpGlobal)
+    }
+  }, [])
+
   const updateMousePosition = (e) => {
     const canvas = canvasRef.current
     const rect = canvas.getBoundingClientRect()
@@ -129,44 +186,6 @@ const updateGrid = (grid) => {
     setIsMouseDown(false)
   }
 
-  // simulate physics and animation by redrawing the gird
-  useEffect(() => {
-    const canvas = canvasRef.current
-    const ctx = canvas.getContext("2d")
-
-    const interval = setInterval(() => {
-      setGrid((prevGrid) => {
-        const updatedGrid = updateGrid(prevGrid)
-        drawGrid(ctx, updatedGrid)
-        return updatedGrid
-      })
-    }, INTERVAL)
-
-    return () => clearInterval(interval)
-  }, [canvasHeight, canvasWidth])
-
-  // drop sand continuously while the mouse down
-  useEffect(() => {
-    const interval = setInterval(() => {
-      dropSand()
-    }, INTERVAL)
-
-    return () => clearInterval(interval)
-  }, [isMouseDown, mousePosition])
-
-  // add/remove event listeners 
-  useEffect(() => {
-    const handleMouseUpGlobal = () => {
-      setIsMouseDown(false)
-    }
-
-    window.addEventListener("mouseup", handleMouseUpGlobal)
-    return () => {
-      window.removeEventListener("mouseup", handleMouseUpGlobal)
-    }
-  }, [])
-
-  // Handle canvas size adjustments via user input
   const handleCanvasWidthChange = (e) => {
     setCanvasWidth(parseInt(e.target.value, 10))
   }
@@ -175,15 +194,29 @@ const updateGrid = (grid) => {
     setCanvasHeight(parseInt(e.target.value, 10))
   }
 
+  const toggleGravity = () => {
+    setReverseGravity((prev) => !prev);
+  };
+
+  /*
+    To do:
+    - Add more types of cells (water, stone, etc.)
+    - changeable sand colors, gradients, rainbows, etc.
+    - change to animate frame
+    - width control spans width of canvas, height control spans height of canvas
+    - general style changes, sidebar, settings, change background normal mode, space mode ?, etc.
+    - preserve sand on resize && add a clear button maybe?
+  */
+
   return (
     <div>
       <div style={{ marginBottom: "10px" }}>
-        <label htmlFor="width-slider">Canvas Width: </label>
+        <label htmlFor="width-slider">Canvas Width: </label> 
         <input
           id="width-slider"
           type="range"
-          min="200"
-          max="1200"
+          min="600"
+          max="1000"
           step={10}
           value={canvasWidth}
           onChange={handleCanvasWidthChange}
@@ -197,7 +230,7 @@ const updateGrid = (grid) => {
           id="height-slider"
           type="range"
           min="200"
-          max="800"
+          max="600"
           step={10}
           value={canvasHeight}
           onChange={handleCanvasHeightChange}
@@ -217,6 +250,10 @@ const updateGrid = (grid) => {
         />
         <span> {dropRadius}</span>
       </div>
+
+      <button onClick={toggleGravity}>
+        {reverseGravity ? "normal gravity" : "reverse gravity"}
+      </button>
 
       <canvas
         ref={canvasRef}
